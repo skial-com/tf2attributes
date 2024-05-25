@@ -96,9 +96,9 @@ enum struct HeapAttributeValue {
 }
 ArrayList g_ManagedAllocatedValues;
 
-static char g_plugin_name[64];
-static bool g_reload_plugin;
+static bool g_reload_plugin;	// reload plugin if extension gets loaded
 static bool g_extension_loaded;
+static char g_plugin_name[64];
 
 public void OnLibraryAdded(const char[] name)
 {
@@ -122,8 +122,17 @@ public void OnLibraryRemoved(const char[] name)
 	}
 }
 
+public void OnAllPluginsLoaded()
+{
+	if(!g_extension_loaded)
+	{
+		g_reload_plugin = true;
+	}
+}
+
 static bool g_bPluginReady = false;
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max) {
+
 	char game[8];
 	GetGameFolderName(game, sizeof(game));
 	
