@@ -2,6 +2,7 @@
 
 #include <sourcemod>
 #include <sdktools>
+#include <port64>
 
 #pragma newdecls required
 
@@ -18,6 +19,31 @@ public Plugin myinfo = {
 	version		= PLUGIN_VERSION,
 	url		= PLUGIN_CONTACT
 };
+
+public Extension __ext_ctf2attributes = 
+{
+	name = "ctf2attributes",
+	file = "ctf2attributes.ext",
+	autoload = 1,
+	required = 0,
+};
+
+native bool CTF2Attrib_SetByName(int iEntity, const char[] strAttrib, float flValue);
+native bool CTF2Attrib_SetByDefIndex(int iEntity, int iDefIndex, float flValue);
+native bool CTF2Attrib_RemoveByName(int iEntity, const char[] strAttrib);
+native bool CTF2Attrib_RemoveByDefIndex(int iEntity, int iDefIndex);
+native bool CTF2Attrib_RemoveAll(int iEntity);
+native bool CTF2Attrib_ClearCache(int iEntity);
+
+public void __ext_ctf2attributes_SetNTVOptional()
+{
+	MarkNativeAsOptional("CTF2Attrib_SetByName");
+	MarkNativeAsOptional("CTF2Attrib_SetByDefIndex");
+	MarkNativeAsOptional("CTF2Attrib_RemoveByName");
+	MarkNativeAsOptional("CTF2Attrib_RemoveByDefIndex");
+	MarkNativeAsOptional("CTF2Attrib_RemoveAll");
+	MarkNativeAsOptional("CTF2Attrib_ClearCache");
+}
 
 // "counts as assister is some kind of pet this update is going to be awesome" is 73 characters. Valve... Valve.
 #define MAX_ATTRIBUTE_NAME_LENGTH 128
@@ -70,6 +96,32 @@ enum struct HeapAttributeValue {
 }
 ArrayList g_ManagedAllocatedValues;
 
+static char g_plugin_name[64];
+static bool g_reload_plugin;
+static bool g_extension_loaded;
+
+public void OnLibraryAdded(const char[] name)
+{
+	if(StrEqual(name, "ctf2attributes"))
+	{
+		g_extension_loaded = true;
+		if(g_reload_plugin)
+		{
+			g_reload_plugin = false;
+			ServerCommand("sm plugins reload %s", g_plugin_name);
+		}	
+	}
+}
+
+public void OnLibraryRemoved(const char[] name)
+{
+	if(StrEqual(name, "ctf2attributes"))
+	{
+		g_extension_loaded = false;
+		g_reload_plugin = true;
+	}
+}
+
 static bool g_bPluginReady = false;
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max) {
 	char game[8];
@@ -79,6 +131,8 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 		strcopy(error, err_max, "Plugin only available for TF2 and possibly TF2Beta");
 		return APLRes_Failure;
 	}
+
+	GetPluginFilename(myself, g_plugin_name, sizeof(g_plugin_name));
 	
 	CreateNative("TF2Attrib_SetByName", Native_SetAttrib);
 	CreateNative("TF2Attrib_SetByDefIndex", Native_SetAttribByID);
@@ -372,6 +426,11 @@ public void OnPluginEnd() {
 	 * but we do need to remove them when the plugin is unloaded / reloaded, since we manage
 	 * runtime non-networked attributes ourselves and they don't outlive the plugin.
 	 */
+	if(Port64_PointerBytes() == 8)
+	{
+		return;
+	}
+
 	RemoveNonNetworkedRuntimeAttributesOnEntities();
 	DestroyManagedAllocatedValues();
 }
@@ -380,6 +439,11 @@ public void OnPluginEnd() {
  * Free up all attribute values that we allocated ourselves.
  */
 public void OnMapEnd() {
+	if(Port64_PointerBytes() == 8)
+	{
+		return;
+	}
+
 	DestroyManagedAllocatedValues();
 	
 	// because attribute injection's a thing now, we invalidate our internal mappings
@@ -527,6 +591,15 @@ public int Native_GetSOCAttribs(Handle plugin, int numParams) {
 
 /* native bool TF2Attrib_SetByName(int iEntity, char[] strAttrib, float flValue); */
 public int Native_SetAttrib(Handle plugin, int numParams) {
+	if(g_extension_loaded)
+	{
+		char strAttrib[MAX_ATTRIBUTE_NAME_LENGTH];
+		GetNativeString(2, strAttrib, sizeof(strAttrib));
+		float flVal = GetNativeCell(3);		
+		CTF2Attrib_SetByName(GetNativeCell(1), strAttrib, flVal);
+		return true;
+	}
+
 	int entity = GetNativeCell(1);
 	if (!IsValidEntity(entity)) {
 		return ThrowNativeError(SP_ERROR_NATIVE, "Entity %d (%d) is invalid", EntIndexToEntRef(entity), entity);
@@ -552,6 +625,12 @@ public int Native_SetAttrib(Handle plugin, int numParams) {
 
 /* native bool TF2Attrib_SetByDefIndex(int iEntity, int iDefIndex, float flValue); */
 public int Native_SetAttribByID(Handle plugin, int numParams) {
+	if(g_extension_loaded)
+	{
+		CTF2Attrib_SetByDefIndex(GetNativeCell(1), GetNativeCell(2), GetNativeCell(3));
+		return true;
+	}
+
 	int entity = GetNativeCell(1);
 	if (!IsValidEntity(entity)) {
 		return ThrowNativeError(SP_ERROR_NATIVE, "Entity %d (%d) is invalid", EntIndexToEntRef(entity), entity);
@@ -645,6 +724,14 @@ public int Native_GetAttribByID(Handle plugin, int numParams) {
 
 /* native bool TF2Attrib_RemoveByName(int iEntity, char[] strAttrib); */
 public int Native_Remove(Handle plugin, int numParams) {
+	if(g_extension_loaded)
+	{
+		char strAttrib[MAX_ATTRIBUTE_NAME_LENGTH];
+		GetNativeString(2, strAttrib, sizeof(strAttrib));
+		CTF2Attrib_RemoveByName(GetNativeCell(1), strAttrib);
+		return true;
+	}
+
 	int entity = GetNativeCell(1);
 	if (!IsValidEntity(entity)) {
 		return ThrowNativeError(SP_ERROR_NATIVE, "Entity %d (%d) is invalid", EntIndexToEntRef(entity), entity);
@@ -669,6 +756,12 @@ public int Native_Remove(Handle plugin, int numParams) {
 
 /* native bool TF2Attrib_RemoveByDefIndex(int iEntity, int iDefIndex); */
 public int Native_RemoveByID(Handle plugin, int numParams) {
+	if(g_extension_loaded)
+	{
+		CTF2Attrib_RemoveByDefIndex(GetNativeCell(1), GetNativeCell(2));
+		return true;
+	}
+
 	int entity = GetNativeCell(1);
 	if (!IsValidEntity(entity)) {
 		return ThrowNativeError(SP_ERROR_NATIVE, "Entity %d (%d) is invalid", EntIndexToEntRef(entity), entity);
@@ -692,6 +785,12 @@ public int Native_RemoveByID(Handle plugin, int numParams) {
 
 /* native bool TF2Attrib_RemoveAll(int iEntity); */
 public int Native_RemoveAll(Handle plugin, int numParams) {
+	if(g_extension_loaded)
+	{
+		CTF2Attrib_RemoveAll(GetNativeCell(1));
+		return true;
+	}
+
 	int entity = GetNativeCell(1);
 	if (!IsValidEntity(entity)) {
 		return ThrowNativeError(SP_ERROR_NATIVE, "Entity %d (%d) is invalid", EntIndexToEntRef(entity), entity);
@@ -780,6 +879,11 @@ static bool ClearAttributeCache(int entity) {
 
 /* native bool TF2Attrib_ClearCache(int iEntity); */
 public int Native_ClearCache(Handle plugin, int numParams) {
+	if(g_extension_loaded)
+	{
+		CTF2Attrib_ClearCache(GetNativeCell(1));
+		return true;
+	}	
 	int entity = GetNativeCell(1);
 	if (!IsValidEntity(entity)) {
 		return ThrowNativeError(SP_ERROR_NATIVE, "Entity %d (%d) is invalid", EntIndexToEntRef(entity), entity);
