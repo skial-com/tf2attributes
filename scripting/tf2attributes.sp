@@ -96,9 +96,9 @@ enum struct HeapAttributeValue {
 }
 ArrayList g_ManagedAllocatedValues;
 
-static bool g_reload_plugin;	// reload plugin if extension gets loaded
+// reload plugin if extension gets loaded
+static bool g_reload_plugin;
 static bool g_extension_loaded;
-static char g_plugin_name[64];
 
 public void OnLibraryAdded(const char[] name)
 {
@@ -108,8 +108,10 @@ public void OnLibraryAdded(const char[] name)
 		if(g_reload_plugin)
 		{
 			g_reload_plugin = false;
-			ServerCommand("sm plugins reload %s", g_plugin_name);
-		}	
+            char pluginName[64];
+            GetPluginFilename(INVALID_HANDLE, pluginName, sizeof(pluginName));
+            ServerCommand("sm plugins reload %s", pluginName);
+		}
 	}
 }
 
@@ -141,8 +143,6 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 		return APLRes_Failure;
 	}
 
-	GetPluginFilename(myself, g_plugin_name, sizeof(g_plugin_name));
-	
 	CreateNative("TF2Attrib_SetByName", Native_SetAttrib);
 	CreateNative("TF2Attrib_SetByDefIndex", Native_SetAttribByID);
 	CreateNative("TF2Attrib_SetFromStringValue", Native_SetAttribStringByName);
